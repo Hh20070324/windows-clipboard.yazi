@@ -1,0 +1,122 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory, Position = 0)]
+    [string] $Destination,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]] $Paths
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Get-SevenZip {
+    $configured = $env:YAZI_WINDOWS_CLIPBOARD_7Z
+    if (-not [string]::IsNullOrWhiteSpace($configured) -and (Test-Path -LiteralPath $configured -PathType Leaf)) {
+        return $configured
+    }
+
+    $command = Get-Command 7z.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1 -ExpandProperty Source
+    if ($command) {
+        return $command
+    }
+
+    $candidates = @(
+        'D:\7zip\7-Zip\7z.exe',
+        'C:\Program Files\7-Zip\7z.exe',
+        'C:\Program Files (x86)\7-Zip\7z.exe'
+    )
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return $candidate
+        }
+    }
+
+    throw '7-Zip was not found. Install 7-Zip or set YAZI_WINDOWS_CLIPBOARD_7Z to 7z.exe.'
+}
+
+function Get-AvailableDirectory {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Directory,
+
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    $candidate = Join-Path -Path $Directory -ChildPath $Name
+    if (-not (Test-Path -LiteralPath $candidate)) {
+        return $candidate
+    }
+
+    $candidate = Join-Path -Path $Directory -ChildPath ("{0} - Copy" -f $Name)
+    if (-not (Test-Path -LiteralPath $candidate)) {
+        return $candidate
+    }
+
+    $index = 2
+    while ($true) {
+        $candidate = Join-Path -Path $Directory -ChildPath ("{0} - Copy ({1})" -f $Name, $index)
+        if (-not (Test-Path -LiteralPath $candidate)) {
+            return $candidate
+        }
+
+        $index++
+    }
+}
+
+try {
+    $destinationPath = Resolve-Path -LiteralPath $Destination -ErrorAction Stop |
+        Select-Object -First 1 -ExpandProperty Path
+}
+catch {
+    Write-Error "Destination not found: $Destination"
+    exit 1
+}
+
+if (-not (Test-Path -LiteralPath $destinationPath -PathType Container)) {
+    Write-Error "Destination is not a directory: $destinationPath"
+    exit 1
+}
+
+$items = @(
+    $Paths |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        ForEach-Object {
+            Resolve-Path -LiteralPath $_ -ErrorAction SilentlyContinue |
+                Select-Object -First 1 -ExpandProperty Path
+        } |
+        Where-Object { $_ } |
+        Select-Object -Unique
+)
+
+if ($items.Count -eq 0) {
+    Write-Error 'No valid archives were provided.'
+    exit 1
+}
+
+$sevenZip = Get-SevenZip
+
+foreach ($item in $items) {
+    if (-not (Test-Path -LiteralPath $item -PathType Leaf)) {
+        Write-Warning "Skipped non-file: $item"
+        continue
+    }
+
+    $name = [System.IO.Path]::GetFileNameWithoutExtension($item)
+    if ([string]::IsNullOrWhiteSpace($name)) {
+        $name = 'Extracted'
+    }
+
+    $extractPath = Get-AvailableDirectory -Directory $destinationPath -Name $name
+    New-Item -ItemType Directory -Path $extractPath -Force | Out-Null
+
+    & $sevenZip x -y "-o$extractPath" -- $item
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "7-Zip extract failed with exit code $LASTEXITCODE for: $item"
+        exit $LASTEXITCODE
+    }
+
+    Write-Host "Extracted: $item -> $extractPath"
+}

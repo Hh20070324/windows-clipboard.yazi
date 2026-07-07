@@ -125,6 +125,26 @@ function M:entry(job)
 		return
 	end
 
+	if action == "archive" or action == "extract" then
+		if #state.paths == 0 then
+			notify("warn", "Windows Clipboard", "No file is selected or hovered.")
+			return
+		end
+
+		local args = { state.cwd }
+		for _, path in ipairs(state.paths) do
+			args[#args + 1] = path
+		end
+
+		local script = action == "archive" and "archive.ps1" or "extract.ps1"
+		local ok, message = run_powershell(root .. "\\scripts\\" .. script, args)
+		if not ok then
+			notify("error", "Windows Clipboard", message)
+		end
+
+		return
+	end
+
 	notify("error", "Windows Clipboard", "Unknown action: " .. tostring(action))
 end
 
