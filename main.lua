@@ -2,23 +2,37 @@
 
 local M = {}
 
+local function path_from_url(url)
+	if not url then
+		return nil
+	end
+
+	return tostring(url.path or url)
+end
+
 local get_state = ya.sync(function()
 	local tab = cx.active
 	local paths = {}
 
 	for _, url in pairs(tab.selected) do
-		paths[#paths + 1] = tostring(url)
+		local path = path_from_url(url)
+		if path then
+			paths[#paths + 1] = path
+		end
 	end
 
 	if #paths == 0 then
 		local hovered = tab.current.hovered
 		if hovered then
-			paths[#paths + 1] = tostring(hovered.url)
+			local path = path_from_url(hovered.url)
+			if path then
+				paths[#paths + 1] = path
+			end
 		end
 	end
 
 	return {
-		cwd = tostring(tab.current.cwd),
+		cwd = path_from_url(tab.current.cwd),
 		paths = paths,
 	}
 end)
