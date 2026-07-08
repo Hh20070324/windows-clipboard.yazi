@@ -2,12 +2,27 @@
 
 local M = {}
 
-local function path_from_url(url)
-	if not url then
-		return nil
+local cached_powershell = nil
+
+local function powershell()
+	if cached_powershell then
+		return cached_powershell
 	end
 
-	return tostring(url.path or url)
+	local candidates = {
+		"pwsh",
+		"powershell.exe",
+	}
+
+	for _, command in ipairs(candidates) do
+		local _, err = Command(command):arg({ "-NoProfile", "-Command", "exit 0" }):output()
+		if not err then
+			cached_powershell = command
+			return command
+		end
+	end
+
+	return nil
 end
 
 local get_state = ya.sync(function()
@@ -15,29 +30,62 @@ local get_state = ya.sync(function()
 	local paths = {}
 
 	for _, url in pairs(tab.selected) do
-		local path = path_from_url(url)
-		if path then
-			paths[#paths + 1] = path
-		end
+		paths[#paths + 1] = tostring(url)
 	end
 
 	if #paths == 0 then
 		local hovered = tab.current.hovered
 		if hovered then
-			local path = path_from_url(hovered.url)
-			if path then
-				paths[#paths + 1] = path
-			end
+			paths[#paths + 1] = tostring(hovered.url)
 		end
 	end
 
 	return {
-		cwd = path_from_url(tab.current.cwd),
+		cwd = tostring(tab.current.cwd),
 		paths = paths,
 	}
 end)
 
+local function temp_file()
+	local directory = os.getenv("TEMP") or os.getenv("TMP") or "."
+	local name = string.format("windows-clipboard-yazi-%d-%d.txt", os.time(), math.random(100000, 999999))
+
+	return directory .. "\\" .. name
+end
+
+local function write_path_list(paths)
+	local file = temp_file()
+	local handle, err = io.open(file, "w")
+	if not handle then
+		return nil, err
+	end
+
+	handle:write("\239\187\191")
+
+	for _, path in ipairs(paths) do
+		handle:write(path, "\n")
+	end
+
+	handle:close()
+	return file, nil
+end
+
 local function plugin_dir()
+	local configured = os.getenv("YAZI_WINDOWS_CLIPBOARD_PLUGIN_DIR")
+	if configured and configured ~= "" then
+		return configured
+	end
+
+	local info = debug and debug.getinfo and debug.getinfo(1, "S")
+	local source = info and info.source or ""
+	if source:sub(1, 1) == "@" then
+		local path = source:sub(2)
+		local directory = path:match("^(.*)[/\\][^/\\]+$")
+		if directory and directory ~= "" then
+			return directory
+		end
+	end
+
 	local appdata = os.getenv("APPDATA")
 
 	if appdata and appdata ~= "" then
@@ -75,6 +123,11 @@ local function output_message(output, fallback)
 end
 
 local function run_powershell(script, args)
+	local shell = powershell()
+	if not shell then
+		return false, "PowerShell was not found. Install PowerShell 7 or use Windows PowerShell."
+	end
+
 	local command_args = {
 		"-NoProfile",
 		"-Sta",
@@ -88,7 +141,7 @@ local function run_powershell(script, args)
 		command_args[#command_args + 1] = arg
 	end
 
-	local output, err = Command("pwsh"):arg(command_args):output()
+	local output, err = Command(shell):arg(command_args):output()
 
 	if err then
 		return false, tostring(err)
@@ -99,6 +152,21 @@ local function run_powershell(script, args)
 	end
 
 	return true, output_message(output, "")
+end
+
+local function run_with_paths(script, args, paths)
+	local list, err = write_path_list(paths)
+	if not list then
+		return false, "Failed to create path list: " .. tostring(err)
+	end
+
+	args[#args + 1] = "-PathList"
+	args[#args + 1] = list
+
+	local ok, message = run_powershell(script, args)
+	os.remove(list)
+
+	return ok, message
 end
 
 function M:entry(job)
@@ -117,23 +185,24 @@ function M:entry(job)
 			return
 		end
 
-		local args = { action }
-		for _, path in ipairs(state.paths) do
-			args[#args + 1] = path
-		end
-
-		local ok, message = run_powershell(root .. "\\scripts\\set-file-clipboard.ps1", args)
+		local ok, message = run_with_paths(root .. "\\scripts\\set-file-clipboard.ps1", { action }, state.paths)
 		if not ok then
 			notify("error", "Windows Clipboard", message)
+		elseif message ~= "" then
+			notify("info", "Windows Clipboard", message)
 		end
 
 		return
 	end
 
 	if action == "paste" then
+		notify("info", "Windows Clipboard", "Pasting files...")
+
 		local ok, message = run_powershell(root .. "\\scripts\\paste-file-clipboard.ps1", { state.cwd })
 		if not ok then
 			notify("error", "Windows Clipboard", message)
+		elseif message ~= "" then
+			notify("info", "Windows Clipboard", message)
 		end
 
 		return
@@ -145,15 +214,15 @@ function M:entry(job)
 			return
 		end
 
-		local args = { state.cwd }
-		for _, path in ipairs(state.paths) do
-			args[#args + 1] = path
-		end
-
 		local script = action == "archive" and "archive.ps1" or "extract.ps1"
-		local ok, message = run_powershell(root .. "\\scripts\\" .. script, args)
+		local label = action == "archive" and "Archiving files..." or "Extracting archives..."
+		notify("info", "Windows Clipboard", label)
+
+		local ok, message = run_with_paths(root .. "\\scripts\\" .. script, { state.cwd }, state.paths)
 		if not ok then
 			notify("error", "Windows Clipboard", message)
+		elseif message ~= "" then
+			notify("info", "Windows Clipboard", message)
 		end
 
 		return

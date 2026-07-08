@@ -3,6 +3,9 @@ param(
     [Parameter(Mandatory, Position = 0)]
     [string] $Destination,
 
+    [Parameter()]
+    [string] $PathList,
+
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $Paths
 )
@@ -22,9 +25,9 @@ function Get-SevenZip {
     }
 
     $candidates = @(
-        'D:\7zip\7-Zip\7z.exe',
         'C:\Program Files\7-Zip\7z.exe',
-        'C:\Program Files (x86)\7-Zip\7z.exe'
+        'C:\Program Files (x86)\7-Zip\7z.exe',
+        'D:\7zip\7-Zip\7z.exe'
     )
 
     foreach ($candidate in $candidates) {
@@ -34,6 +37,29 @@ function Get-SevenZip {
     }
 
     throw '7-Zip was not found. Install 7-Zip or set YAZI_WINDOWS_CLIPBOARD_7Z to 7z.exe.'
+}
+
+function Get-InputPaths {
+    $items = [System.Collections.Generic.List[string]]::new()
+
+    if (-not [string]::IsNullOrWhiteSpace($PathList)) {
+        if (-not (Test-Path -LiteralPath $PathList -PathType Leaf)) {
+            Write-Error "Path list not found: $PathList"
+            exit 1
+        }
+
+        Get-Content -LiteralPath $PathList -Encoding UTF8 |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            ForEach-Object { [void] $items.Add($_) }
+    }
+
+    foreach ($path in $Paths) {
+        if (-not [string]::IsNullOrWhiteSpace($path)) {
+            [void] $items.Add($path)
+        }
+    }
+
+    return $items
 }
 
 function Get-AvailablePath {
@@ -84,7 +110,7 @@ if (-not (Test-Path -LiteralPath $destinationPath -PathType Container)) {
 }
 
 $items = @(
-    $Paths |
+    Get-InputPaths |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
         ForEach-Object {
             Resolve-Path -LiteralPath $_ -ErrorAction SilentlyContinue |
@@ -115,7 +141,7 @@ else {
 $sevenZip = Get-SevenZip
 $archivePath = Get-AvailablePath -Directory $destinationPath -FileName $archiveName
 
-& $sevenZip a -tzip -- $archivePath @items
+& $sevenZip a -tzip -- $archivePath @items | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Error "7-Zip archive failed with exit code $LASTEXITCODE."
     exit $LASTEXITCODE

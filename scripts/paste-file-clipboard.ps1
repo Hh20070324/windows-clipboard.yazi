@@ -59,7 +59,10 @@ $count = 0
 function Get-AvailablePath {
     param(
         [Parameter(Mandatory)]
-        [string] $Path
+        [string] $Path,
+
+        [Parameter()]
+        [switch] $Container
     )
 
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -67,8 +70,13 @@ function Get-AvailablePath {
     }
 
     $parent = [System.IO.Path]::GetDirectoryName($Path)
-    $name = [System.IO.Path]::GetFileNameWithoutExtension($Path)
-    $extension = [System.IO.Path]::GetExtension($Path)
+    $name = if ($Container) {
+        [System.IO.Path]::GetFileName($Path)
+    }
+    else {
+        [System.IO.Path]::GetFileNameWithoutExtension($Path)
+    }
+    $extension = if ($Container) { '' } else { [System.IO.Path]::GetExtension($Path) }
 
     $candidate = Join-Path $parent ("{0} - Copy{1}" -f $name, $extension)
 
@@ -96,7 +104,7 @@ foreach ($source in $fileDropList) {
     }
 
     $target = Join-Path $destinationPath ([System.IO.Path]::GetFileName($source))
-    $target = Get-AvailablePath -Path $target
+    $target = Get-AvailablePath -Path $target -Container:(Test-Path -LiteralPath $source -PathType Container)
 
     if ($shouldMove) {
         Move-Item -LiteralPath $source -Destination $target -ErrorAction Stop

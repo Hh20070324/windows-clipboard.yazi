@@ -24,7 +24,7 @@ Use the Windows native file clipboard from Yazi.
 
 - Windows
 - Yazi 26.5.6 or newer
-- PowerShell 7 available as `pwsh`
+- PowerShell 7 available as `pwsh`, or Windows PowerShell available as `powershell.exe`
 - 7-Zip for archive and extract actions. This plugin calls the 7-Zip CLI; Yazi itself does not provide these archive operations.
 
 7-Zip is detected in this order:
@@ -32,6 +32,7 @@ Use the Windows native file clipboard from Yazi.
 1. `YAZI_WINDOWS_CLIPBOARD_7Z`
 2. `7z.exe` on `PATH`
 3. Common install paths such as `C:\Program Files\7-Zip\7z.exe`
+4. The author's local fallback path, `D:\7zip\7-Zip\7z.exe`
 
 ## Installation
 
@@ -77,8 +78,12 @@ Then add the same key bindings shown above to `keymap.toml`.
 ## Notes
 
 - This plugin is Windows-only.
+- The plugin tries `pwsh` first and falls back to `powershell.exe`.
 - `cut` followed by `paste` moves files and clears the clipboard after a successful move.
 - `archive` and `extract` require 7-Zip. If 7-Zip is installed in a custom path, set `YAZI_WINDOWS_CLIPBOARD_7Z` to the full path of `7z.exe`.
+- Large selections are passed to PowerShell through a temporary UTF-8 path list file instead of a long command line.
+- Successful copy, cut, paste, archive, and extract actions are reported with Yazi notifications.
+- Some browsers may rename files pasted from the Windows file clipboard. This is browser behavior and can also happen when copying files from File Explorer. Drag-and-drop usually preserves the original name.
 - Archive output uses Windows-style conflict names such as `example - Copy.zip`.
 - Extract output is written to a same-name directory and also uses Windows-style conflict names.
 - Pasting files into apps such as QQ, GPT pages, and browser upload fields depends on whether the target app accepts Windows file clipboard data.
@@ -114,7 +119,7 @@ MIT
 
 - Windows
 - Yazi 26.5.6 或更新版本
-- PowerShell 7，并且命令名为 `pwsh`
+- PowerShell 7，命令名为 `pwsh`；或系统自带 Windows PowerShell，命令名为 `powershell.exe`
 - 7-Zip，用于压缩和解压。插件调用的是 7-Zip CLI；Yazi 本身不提供这些压缩 / 解压操作。
 
 7-Zip 的检测顺序：
@@ -122,6 +127,7 @@ MIT
 1. `YAZI_WINDOWS_CLIPBOARD_7Z`
 2. `PATH` 中的 `7z.exe`
 3. 常见安装路径，例如 `C:\Program Files\7-Zip\7z.exe`
+4. 作者本机兜底路径 `D:\7zip\7-Zip\7z.exe`
 
 ## 安装
 
@@ -167,8 +173,12 @@ prepend_keymap = [
 ## 注意事项
 
 - 该插件仅支持 Windows。
+- 插件会优先尝试 `pwsh`，找不到时回退到 `powershell.exe`。
 - `x` 剪切后再 `v` 粘贴会移动文件；移动成功后会清空剪贴板，避免重复移动。
 - `archive` 和 `extract` 需要 7-Zip。如果 7-Zip 安装在自定义路径，请将 `YAZI_WINDOWS_CLIPBOARD_7Z` 设置为 `7z.exe` 的完整路径。
+- 大量选择项会通过临时 UTF-8 路径清单传给 PowerShell，而不是塞进一条很长的命令行。
+- 复制、剪切、粘贴、压缩、解压成功后会通过 Yazi 通知反馈。
+- 部分浏览器在接收 Windows 文件剪贴板粘贴时可能会改写文件名；这属于浏览器行为，使用资源管理器复制文件后粘贴也可能出现。拖拽上传通常会保留原文件名。
 - 压缩输出使用 Windows 风格冲突命名，例如 `example - Copy.zip`。
 - 解压输出会进入同名文件夹，并同样使用 Windows 风格冲突命名。
 - 能否粘贴到 QQ、GPT 页面、浏览器上传框等应用，取决于目标应用是否支持 Windows 文件剪贴板。
